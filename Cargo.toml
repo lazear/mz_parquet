@@ -1,0 +1,18 @@
+[package]
+name = "mz_parquet"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+
+anyhow = "1.0"
+async-compression = { version = "0.3", features = ["tokio", "gzip", "zlib"] }
+base64 = "0.13"
+env_logger = "0.8.4"
+parquet = "44.0.0"
+log = "0.4"
+tokio = { version = "1.0", features = ["full"] }
+thiserror = "1.0"
+quick-xml = { version = "0.25", features = ["async-tokio"] }
