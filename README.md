@@ -1,5 +1,7 @@
 # mz_parquet
 
+*REQUEST FOR COMMENT* - If you have feedback or suggetions for this file format, it would be greatly appreciated (use the issue tracker!).
+
 This repository houses a proof-of-concept for a modern, data lake-ready storage format for mass spectrometry data (mzparquet). A rust application is also provided for converting existing mzML files to mzparquet
 
 Current standards like mzML, mzMLb, or mz5 have good characteristics for long-term data archival, but all require custom parsers to access data.
@@ -11,7 +13,7 @@ However, the most critical part is that Parquet is widely supported in the data 
 The proposed file format stores the most important data for analyzing MS data in individual columns (scan identifiers, ms_level, precursor list, scan_start_time, m/z, intensity, ion mobility, etc), and has a final column for storing lists of key-value pairs (cvParams in the mzML spec).
 
 
-Prior work: https://github.com/compomics/ThermoRawFileParser - this would probably be the best way to go to mzparquet!
+Prior work: https://github.com/compomics/ThermoRawFileParser - this would probably be the best way to integrate mzparquet! There is already an existing prototype parquet implementation, but it is different that the one proposed here.
 
 ## Example of querying mzparquet files
 
