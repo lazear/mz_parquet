@@ -1,9 +1,10 @@
 use async_compression::tokio::bufread::ZlibDecoder;
+use indicatif::ProgressStyle;
 use quick_xml::events::Event;
 use quick_xml::Reader;
 use tokio::io::{AsyncBufRead, AsyncReadExt};
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, PartialEq, PartialOrd)]
 pub struct Precursor {
     pub mz: f32,
     pub intensity: Option<f32>,
@@ -14,7 +15,7 @@ pub struct Precursor {
     pub isolation_window_upper: Option<f32>,
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, PartialEq, PartialOrd)]
 /// An unprocessed mass spectrum, as returned by a parser
 pub struct RawSpectrum {
     /// MSn level
@@ -160,11 +161,25 @@ impl MzMLReader {
             }};
         }
 
+        let pb = indicatif::ProgressBar::new(1)
+            .with_message("Reading mzML")
+            .with_style(
+                ProgressStyle::default_bar()
+                    .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}")
+                    .unwrap(),
+            );
+
         loop {
             match reader.read_event_into_async(&mut buf).await {
                 Ok(Event::Start(ref ev)) => {
                     // State transition into child tag
                     state = match (ev.name().into_inner(), state) {
+                        (b"spectrumList", _) => {
+                            let ex = extract!(ev, b"count");
+                            let count = std::str::from_utf8(&ex)?.parse::<u64>()?;
+                            pb.set_length(count);
+                            None
+                        }
                         (b"spectrum", _) => Some(State::Spectrum),
                         (b"scan", Some(State::Spectrum)) => Some(State::Scan),
                         (b"binaryDataArray", Some(State::Spectrum)) => Some(State::BinaryDataArray),
@@ -365,6 +380,10 @@ impl MzMLReader {
                                 .map(|&level| level == spectrum.ms_level)
                                 .unwrap_or(true);
 
+                            if spectrum.ms_level == 0 {
+                                continue;
+                            }
+
                             match (allow, self.signal_to_noise) {
                                 (true, Some(level))
                                     if level == spectrum.ms_level && !noise_array.is_empty() =>
@@ -383,6 +402,8 @@ impl MzMLReader {
                                 (false, _) => {}
                             }
                             spectrum = RawSpectrum::default();
+                            pb.inc(1);
+
                             None
                         }
                         _ => state,
