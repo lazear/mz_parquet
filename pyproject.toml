@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "mz-parquet"
+version = "0.1.0"
+description = ""
+authors = ["Michael Lazear <michaellazear92@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+packages = [{include = "mz_parquet"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+polars = "^0.18.13"
+parquet-tools = "^0.2.14"
+ipython = "^8.14.0"
+
+[tool.poetry.group.dev.dependencies]
+black = "^23.7.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

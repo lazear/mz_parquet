@@ -71,19 +71,6 @@ pub fn serialize_to_parquet<W: Write + Send>(
             ColumnPath::new(vec!["intensity".into()]),
             parquet::basic::Encoding::BYTE_STREAM_SPLIT,
         )
-        .set_column_encoding(
-            ColumnPath::new(vec!["id".into()]),
-            parquet::basic::Encoding::DELTA_BYTE_ARRAY,
-        )
-        .set_column_encoding(
-            ColumnPath::new(vec![
-                "precursors".into(),
-                "list".into(),
-                "element".into(),
-                "spectrum_ref".into(),
-            ]),
-            parquet::basic::Encoding::DELTA_BYTE_ARRAY,
-        )
         .build();
 
     let mut writer = SerializedFileWriter::new(w, schema.into(), options.into())?;
