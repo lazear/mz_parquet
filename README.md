@@ -46,6 +46,7 @@ df.filter(pl.col("precursors").list.eval(pl.element().struct.field("selected_ion
 # Proposed schema
 ```
 message schema {
+    required byte_array filename (utf8);
     required byte_array id (utf8);
     required int32 ms_level;
     required boolean centroid;

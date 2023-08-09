@@ -47,13 +47,18 @@ async fn convert_mzml(path: &str, output_directory: Option<&str>) -> anyhow::Res
         }
     };
 
-    let buf = cloudpath.read().await?;
-
     let mzml_spectra = mzml::MzMLReader::default()
         .parse(cloudpath.read().await?)
         .await?;
 
-    let buffer = block_in_place(|| writer::serialize_to_parquet(Vec::new(), &mzml_spectra))?;
+    let filename = cloudpath
+        .filename()
+        .and_then(|f| f.split_once('.'))
+        .and_then(|(f, _)| Some(f))
+        .unwrap_or(path);
+
+    let buffer =
+        block_in_place(|| writer::serialize_to_parquet(Vec::new(), &mzml_spectra, filename))?;
 
     let bytes = bytes::Bytes::from(buffer);
     let mzparquet_spectra = reader::deserialize_from_parquet(bytes.clone())?;

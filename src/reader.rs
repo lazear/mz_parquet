@@ -149,6 +149,7 @@ pub fn deserialize_from_parquet<R: 'static + ChunkReader>(
     for row in reader.get_row_iter(None)? {
         let row = row?;
         let mut iter = row.get_column_iter();
+        let filename = iter.next();
 
         let spectrum = RawSpectrum {
             id: get_from_column_iter::<String>("id", &mut iter)?.into_bytes(),

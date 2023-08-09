@@ -10,6 +10,7 @@ use std::io::Write;
 pub fn build_schema() -> parquet::errors::Result<Type> {
     let msg = r#"
         message schema {
+            required byte_array filename (utf8);
             required byte_array id (utf8);
             required int32 ms_level;
             required boolean centroid;
@@ -58,6 +59,7 @@ pub fn build_schema() -> parquet::errors::Result<Type> {
 pub fn serialize_to_parquet<W: Write + Send>(
     w: W,
     spectra: &[RawSpectrum],
+    filename: &str,
 ) -> parquet::errors::Result<W> {
     let schema = build_schema()?;
 
@@ -139,6 +141,7 @@ pub fn serialize_to_parquet<W: Write + Send>(
             };
         }
 
+        write_col!(|_| filename.as_bytes().into(), ByteArrayType);
         write_col!(|s| s.id.as_slice().into(), ByteArrayType);
         write_col!(|s| s.ms_level as i32, Int32Type);
         write_col!(|s| s.centroid, BoolType);
