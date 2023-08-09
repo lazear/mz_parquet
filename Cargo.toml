@@ -15,7 +15,7 @@ parquet = "44.0.0"
 log = "0.4"
 tokio = { version = "1.0", features = ["full"] }
 thiserror = "1.0"
-quick-xml = { version = "0.25", features = ["async-tokio"] }
+quick-xml = { version = "0.30.0", features = ["async-tokio"] }
 indicatif = "0.17.6"
 clap = { version = "4.3.21", features = ["cargo", "derive"] }
 sage-cloudpath = { git = "https://github.com/lazear/sage.git" }

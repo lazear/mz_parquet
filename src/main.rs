@@ -47,6 +47,8 @@ async fn convert_mzml(path: &str, output_directory: Option<&str>) -> anyhow::Res
         }
     };
 
+    let buf = cloudpath.read().await?;
+
     let mzml_spectra = mzml::MzMLReader::default()
         .parse(cloudpath.read().await?)
         .await?;
@@ -94,8 +96,13 @@ async fn main() -> anyhow::Result<()> {
     let matches = ConverterArgs::augment_args(cli).get_matches();
     let args = ConverterArgs::from_arg_matches(&matches)?;
 
+    // let mut tasks = Vec::new();
     for file in args.files {
-        convert_mzml(&file, args.output_directory.as_deref()).await?;
+        let output = args.output_directory.clone();
+        // tasks.push(tokio::task::spawn(async move {
+        convert_mzml(&file, output.as_deref()).await?
+        // }));
     }
+
     Ok(())
 }
