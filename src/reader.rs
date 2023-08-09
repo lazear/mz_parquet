@@ -139,7 +139,7 @@ pub fn deserialize_from_parquet<R: 'static + ChunkReader>(
     let nrows = reader.metadata().file_metadata().num_rows();
 
     let pb = indicatif::ProgressBar::new(nrows as u64)
-        .with_message("Reading mzparquet")
+        .with_message("verifying mzparquet")
         .with_style(
             indicatif::ProgressStyle::default_bar()
                 .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}")

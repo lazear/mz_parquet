@@ -1,29 +1,60 @@
-use std::{
-    io::{BufWriter, Write},
-    path::Path,
-};
-use tokio::{io::BufReader, task::block_in_place};
+use anyhow::anyhow;
+use clap::{Args, Command, FromArgMatches};
+use sage_cloudpath::CloudPath;
+use tokio::task::block_in_place;
 
 pub mod mzml;
 pub mod reader;
 pub mod writer;
 
-async fn convert_mzml(path: &str) -> anyhow::Result<()> {
-    let pqt_path = Path::new(path).with_extension("mzparquet");
+#[derive(Args, Debug)]
+struct ConverterArgs {
+    #[arg(short, long)]
+    output_directory: Option<String>,
 
-    let file = tokio::fs::File::open(path).await?;
-    let rdr = BufReader::new(file);
-    let mzml_spectra = mzml::MzMLReader::default().parse(rdr).await?;
+    #[arg(num_args(1..))]
+    files: Vec<String>,
+}
 
-    block_in_place(|| {
-        std::fs::File::create(&pqt_path)
-            .map_err(Into::into)
-            .and_then(|file| writer::serialize_to_parquet(BufWriter::new(file), &mzml_spectra))
-            .map_err(Into::into)
-            .and_then(|mut wtr| wtr.flush())
-    })?;
+async fn convert_mzml(path: &str, output_directory: Option<&str>) -> anyhow::Result<()> {
+    let cloudpath = path.parse::<CloudPath>()?;
+    let pqt_path = match output_directory {
+        Some(dir) => {
+            let mut dir = dir.parse::<CloudPath>()?;
+            dir.mkdir()?;
 
-    let mzparquet_spectra = reader::deserialize_from_parquet(std::fs::File::open(&pqt_path)?)?;
+            let filename = cloudpath
+                .filename()
+                .and_then(|f| f.split_once('.'))
+                .and_then(|(f, _)| Some(format!("{}.mzparquet", f)))
+                .ok_or_else(|| anyhow!("no filename!"))?;
+            dir.push(filename);
+            dir
+        }
+        None => {
+            let filename = cloudpath
+                .filename()
+                .and_then(|f| f.split_once('.'))
+                .and_then(|(f, _)| Some(format!("{}.mzparquet", f)))
+                .ok_or_else(|| anyhow!("no filename!"))?;
+            match cloudpath.clone() {
+                CloudPath::S3 { bucket, .. } => CloudPath::S3 {
+                    bucket,
+                    key: filename,
+                },
+                CloudPath::Local(path) => CloudPath::Local(path.with_file_name(filename)),
+            }
+        }
+    };
+
+    let mzml_spectra = mzml::MzMLReader::default()
+        .parse(cloudpath.read().await?)
+        .await?;
+
+    let buffer = block_in_place(|| writer::serialize_to_parquet(Vec::new(), &mzml_spectra))?;
+
+    let bytes = bytes::Bytes::from(buffer);
+    let mzparquet_spectra = reader::deserialize_from_parquet(bytes.clone())?;
 
     assert_eq!(
         mzml_spectra.len(),
@@ -37,11 +68,13 @@ async fn convert_mzml(path: &str) -> anyhow::Result<()> {
         assert_eq!(a, b);
     }
 
+    pqt_path.write_bytes(bytes.into()).await?;
+
     log::info!(
-        "copied {} spectra from {} to {}, and validated that mzML data == mzparquet data",
+        "copied {} spectra from {} to {}, and validated that data can be read back in a lossless manner",
         mzml_spectra.len(),
-        path,
-        pqt_path.display()
+        cloudpath,
+        pqt_path,
     );
     Ok(())
 }
@@ -53,9 +86,16 @@ async fn main() -> anyhow::Result<()> {
         .parse_env(env_logger::Env::default().filter_or("LOG", "error,mz_parquet=info"))
         .init();
 
-    let args = std::env::args().skip(1);
-    for arg in args {
-        convert_mzml(&arg).await?;
+    let cli = Command::new("mz_parquet")
+        .version(clap::crate_version!())
+        .author("Michael Lazear <michaellazear92@gmail.com>")
+        .about("Convert mzML to mzparquet");
+
+    let matches = ConverterArgs::augment_args(cli).get_matches();
+    let args = ConverterArgs::from_arg_matches(&matches)?;
+
+    for file in args.files {
+        convert_mzml(&file, args.output_directory.as_deref()).await?;
     }
     Ok(())
 }
