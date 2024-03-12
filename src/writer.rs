@@ -40,15 +40,6 @@ pub fn build_schema() -> parquet::errors::Result<Type> {
                     required float element;
                 }
             }
-            optional group cv_params (list) {
-                repeated group list {
-                    required group element {
-                        required byte_array accession (utf8);
-                        required byte_array value (utf8);
-                    }
-                }
-            }
-
         }
     "#;
     let schema = parquet::schema::parser::parse_message_type(msg)?;
@@ -257,35 +248,35 @@ pub fn serialize_to_parquet<W: Write + Send>(
             col.close()?;
         }
 
-        if let Some(mut col) = rg.next_column()? {
-            let key = b"MS:1000133";
-            let values = vec![key.as_slice().into(); spectra.len()];
-            let def_levels = vec![2; spectra.len()];
-            let rep_levels = vec![0; spectra.len()];
+        // if let Some(mut col) = rg.next_column()? {
+        //     // let key = b"MS:1000133";
+        //     // let values = vec![key.as_slice().into(); spectra.len()];
+        //     let def_levels = vec![0; spectra.len()];
+        //     let rep_levels = vec![0; spectra.len()];
 
-            col.typed::<ByteArrayType>().write_batch(
-                &values,
-                Some(&def_levels),
-                Some(&rep_levels),
-            )?;
-            col.close()?;
-        }
+        //     col.typed::<ByteArrayType>().write_batch(
+        //         &[],
+        //         Some(&def_levels),
+        //         Some(&rep_levels),
+        //     )?;
+        //     col.close()?;
+        // }
 
-        if let Some(mut col) = rg.next_column()? {
-            let values = spectra
-                .iter()
-                .map(|s| s.id.as_slice().into())
-                .collect::<Vec<_>>();
-            let def_levels = vec![2; spectra.len()];
-            let rep_levels = vec![0; spectra.len()];
+        // if let Some(mut col) = rg.next_column()? {
+        //     // let values = spectra
+        //     //     .iter()
+        //     //     .map(|s| s.id.as_slice().into())
+        //     //     .collect::<Vec<_>>();
+        //     let def_levels = vec![0; spectra.len()];
+        //     let rep_levels = vec![0; spectra.len()];
 
-            col.typed::<ByteArrayType>().write_batch(
-                &values,
-                Some(&def_levels),
-                Some(&rep_levels),
-            )?;
-            col.close()?;
-        }
+        //     col.typed::<ByteArrayType>().write_batch(
+        //         &[],
+        //         Some(&def_levels),
+        //         Some(&rep_levels),
+        //     )?;
+        //     col.close()?;
+        // }
 
         rg.close()?;
         pb.inc(spectra.len() as u64);
