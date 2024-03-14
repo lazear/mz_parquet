@@ -1,0 +1,138 @@
+name: Build Executables
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  build_ubuntu:
+    name: Build for Linux
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [x86_64-unknown-linux-gnu, x86_64-unknown-linux-musl, aarch64-unknown-linux-gnu, aarch64-unknown-linux-musl]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Get Cargo toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+      
+      - name: Build 
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release --target ${{ matrix.target }}
+          use-cross: true
+
+      - name: Build archive
+        shell: bash
+        run: |
+          mz_parquet_version=${{ github.ref_name }}
+          staging="mz_parquet-$mz_parquet_version-${{ matrix.target }}"
+          mkdir -p "$staging"
+          cp {README.md,LICENSE} "$staging/"
+          cp "target/${{ matrix.target }}/release/mz_parquet" "$staging/"
+          tar czf "$staging.tar.gz" "$staging"
+          echo "ASSET=$staging.tar.gz" >> $GITHUB_ENV
+
+      - name: Upload executable to release
+        uses: ./.github/workflows/upload_artifacts
+        with:
+          name: ${{ env.ASSET }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ env.ASSET }}
+
+  build_windows:
+    name: Build for Windows
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        include:
+          - name: Windows 64-bits
+            target: x86_64-pc-windows-msvc
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Get Cargo toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+
+      - name: Build 
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release --target ${{ matrix.target }}
+
+      - name: Build archive
+        shell: bash
+        run: |
+          mz_parquet_version=${{ github.ref_name }} 
+          staging="mz_parquet-$mz_parquet_version-${{ matrix.target }}"
+          mkdir -p "$staging"
+          cp {README.md,LICENSE} "$staging/"
+          cp "target/${{ matrix.target }}/release/mz_parquet.exe" "$staging/"
+          7z a "$staging.zip" "$staging"
+          echo "ASSET=$staging.zip" >> $GITHUB_ENV
+
+      - name: Upload executable to release
+        uses: ./.github/workflows/upload_artifacts
+        with:
+          name: ${{ env.ASSET }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ env.ASSET }}
+
+  build_macos:
+    name: Build for MacOS
+    strategy:
+      matrix:
+        include:
+          - name: MacOS (Intel)
+            target: x86_64-apple-darwin
+          - name: MacOS (Apple Silicon)
+            target: aarch64-apple-darwin
+
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Get Cargo toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+          override: true
+
+      - name: Build 
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release --target ${{ matrix.target }}
+
+      - name: Build archive
+        shell: bash
+        run: |
+          mz_parquet_version=${{ github.ref_name }} 
+          staging="mz_parquet-$mz_parquet_version-${{ matrix.target }}"
+          mkdir -p "$staging"
+          cp {README.md,LICENSE} "$staging/"
+          cp "target/${{ matrix.target }}/release/mz_parquet" "$staging/"
+          tar czf "$staging.tar.gz" "$staging"
+          echo "ASSET=$staging.tar.gz" >> $GITHUB_ENV
+
+      - name: Upload to Release
+        uses: ./.github/workflows/upload_artifacts
+        with:
+          name: $${{ env.ASSET }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ env.ASSET }}
