@@ -6,10 +6,13 @@ use tokio::task::block_in_place;
 pub mod mzml;
 pub mod reader;
 pub mod write_long;
-pub mod writer;
+pub mod write_wide;
 
 #[derive(Args, Debug)]
 struct ConverterArgs {
+    #[arg(short, long)]
+    long: bool,
+
     #[arg(short, long)]
     output_directory: Option<String>,
 
@@ -17,7 +20,11 @@ struct ConverterArgs {
     files: Vec<String>,
 }
 
-async fn convert_mzml(path: &str, output_directory: Option<&str>) -> anyhow::Result<()> {
+async fn convert_mzml(
+    path: &str,
+    output_directory: Option<&str>,
+    long: bool,
+) -> anyhow::Result<()> {
     let cloudpath = path.parse::<CloudPath>()?;
     let pqt_path = match output_directory {
         Some(dir) => {
@@ -48,33 +55,19 @@ async fn convert_mzml(path: &str, output_directory: Option<&str>) -> anyhow::Res
         }
     };
 
-    let buf = cloudpath.read().await?;
-
     let mzml_spectra = mzml::MzMLReader::default()
         .parse(cloudpath.read().await?)
         .await?;
 
-    let buffer = block_in_place(|| write_long::serialize_to_parquet(Vec::new(), &mzml_spectra))?;
+    let buffer = block_in_place(|| match long {
+        true => write_long::serialize_to_parquet(Vec::new(), &mzml_spectra),
+        false => write_wide::serialize_to_parquet(Vec::new(), &mzml_spectra),
+    })?;
 
-    let bytes = bytes::Bytes::from(buffer);
-    // let mzparquet_spectra = reader::deserialize_from_parquet(bytes.clone())?;
-
-    // assert_eq!(
-    //     mzml_spectra.len(),
-    //     mzparquet_spectra.len(),
-    //     "Read {} spectra from mzML, and {} from converted mzparquet file!",
-    //     mzml_spectra.len(),
-    //     mzparquet_spectra.len()
-    // );
-
-    // for (a, b) in mzml_spectra.iter().zip(mzparquet_spectra.iter()) {
-    //     assert_eq!(a, b);
-    // }
-
-    pqt_path.write_bytes(bytes.into()).await?;
+    pqt_path.write_bytes(buffer).await?;
 
     log::info!(
-        "copied {} spectra from {} to {}, and validated that data can be read back in a lossless manner",
+        "copied {} spectra from {} to {}",
         mzml_spectra.len(),
         cloudpath,
         pqt_path,
@@ -97,12 +90,9 @@ async fn main() -> anyhow::Result<()> {
     let matches = ConverterArgs::augment_args(cli).get_matches();
     let args = ConverterArgs::from_arg_matches(&matches)?;
 
-    // let mut tasks = Vec::new();
     for file in args.files {
         let output = args.output_directory.clone();
-        // tasks.push(tokio::task::spawn(async move {
-        convert_mzml(&file, output.as_deref()).await?
-        // }));
+        convert_mzml(&file, output.as_deref(), args.long).await?
     }
 
     Ok(())

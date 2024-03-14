@@ -1,4 +1,5 @@
 use crate::mzml::{Precursor, RawSpectrum};
+use anyhow::Context;
 use parquet::{
     basic::ZstdLevel,
     data_type::{BoolType, ByteArrayType, FloatType, Int32Type},
@@ -46,14 +47,12 @@ pub fn build_schema() -> parquet::errors::Result<Type> {
     Ok(schema)
 }
 
-pub fn serialize_to_parquet<W: Write + Send>(
-    w: W,
-    spectra: &[RawSpectrum],
-) -> parquet::errors::Result<W> {
+pub fn serialize_to_parquet<W: Write + Send>(w: W, spectra: &[RawSpectrum]) -> anyhow::Result<W> {
     let schema = build_schema()?;
 
     let options = WriterProperties::builder()
         .set_compression(parquet::basic::Compression::ZSTD(ZstdLevel::try_new(3)?))
+        .set_dictionary_enabled(false)
         .set_column_encoding(
             ColumnPath::new(vec!["mz".into()]),
             parquet::basic::Encoding::BYTE_STREAM_SPLIT,
@@ -282,5 +281,5 @@ pub fn serialize_to_parquet<W: Write + Send>(
         pb.inc(spectra.len() as u64);
     }
 
-    writer.into_inner()
+    writer.into_inner().context("failed")
 }

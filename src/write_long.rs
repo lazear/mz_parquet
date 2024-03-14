@@ -1,17 +1,18 @@
 use crate::mzml::{Precursor, RawSpectrum};
 use parquet::{
     basic::ZstdLevel,
-    column::writer::ColumnCloseResult,
+    column::{reader::get_typed_column_reader, writer::ColumnCloseResult},
     data_type::{BoolType, ByteArrayType, DataType, FloatType, Int32Type},
     file::{
         properties::WriterProperties,
+        reader::FileReader,
         writer::{
             SerializedFileWriter, SerializedPageWriter, SerializedRowGroupWriter, TrackedWrite,
         },
     },
     schema::types::{ColumnDescriptor, ColumnPath, Type},
 };
-use std::{io::Write, sync::Arc};
+use std::{io::Write, mem::MaybeUninit, sync::Arc};
 
 pub fn build_schema() -> parquet::errors::Result<Type> {
     let msg = r#"
@@ -21,12 +22,11 @@ pub fn build_schema() -> parquet::errors::Result<Type> {
             required float rt;
             required float mz; 
             required float intensity;
-
         }
     "#;
-    // optional float inverse_ion_mobility;
     // optional float isolation_window_lower;
     // optional float isolation_window_uppper;
+    // optional float inverse_ion_mobility;
     // optional float precursor_mz;
     // optional float precursor_charge;
     let schema = parquet::schema::parser::parse_message_type(msg)?;
@@ -51,24 +51,6 @@ impl<T: parquet::data_type::DataType> ColumnWriter<T> {
 
     pub fn extend<I: Iterator<Item = T::T>>(&mut self, iter: I) {
         self.values.extend(iter)
-    }
-
-    pub fn write_column(
-        self,
-        column: Arc<ColumnDescriptor>,
-        options: Arc<WriterProperties>,
-    ) -> anyhow::Result<(Vec<u8>, ColumnCloseResult)> {
-        let mut buf = TrackedWrite::new(Vec::new());
-        let page_writer = Box::new(SerializedPageWriter::new(&mut buf));
-        let mut column =
-            parquet::column::writer::ColumnWriterImpl::<T>::new(column, options, page_writer);
-        let x = column.write_batch(&self.values, None, None)?;
-        dbg!(x, self.values.len());
-
-        let c = column.close().unwrap();
-        buf.flush()?;
-        let r = buf.into_inner()?;
-        Ok((r, c))
     }
 }
 
@@ -113,13 +95,7 @@ pub fn serialize_to_parquet<W: Write + Send>(w: W, spectra: &[RawSpectrum]) -> a
     let options = Arc::new(
         WriterProperties::builder()
             .set_compression(parquet::basic::Compression::ZSTD(ZstdLevel::try_new(3)?))
-            .set_column_encoding(
-                ColumnPath::new(vec!["scan".into()]),
-                parquet::basic::Encoding::DELTA_BINARY_PACKED,
-            )
-            // .set_column_encoding(ColumnPath::new(vec!["id".into()]), parquet::basic::Encoding::RLE_DICTIONARY)
-            // .set_column_encoding(ColumnPath::new(vec!["rt".into()]), parquet::basic::Encoding::RLE_DICTIONARY)
-            // .set_column_encoding(ColumnPath::new(vec!["mz".into()]), parquet::basic::Encoding::BYTE_STREAM_SPLIT)
+            .set_dictionary_enabled(false)
             .build(),
     );
 
@@ -140,21 +116,20 @@ pub fn serialize_to_parquet<W: Write + Send>(w: W, spectra: &[RawSpectrum]) -> a
     let mut c_rt: ColumnWriter<FloatType> = ColumnWriter::new(sd.column(2), options.clone());
     let mut c_mz: ColumnWriter<FloatType> = ColumnWriter::new(sd.column(3), options.clone());
     let mut c_int: ColumnWriter<FloatType> = ColumnWriter::new(sd.column(4), options.clone());
+    // let mut c_lo: ColumnWriter<FloatType> = ColumnWriter::new(sd.column(5), options.clone());
+    // let mut c_hi: ColumnWriter<FloatType> = ColumnWriter::new(sd.column(6), options.clone());
 
     for (scan, spectra) in spectra.iter().enumerate() {
-        // n += spectra.mz.len();
-
-        // if n >= u16::MAX as usize {
-        //     rg.close()?;
-        //     let mut rg = writer.next_row_group()?;
-        // }
-
         let n = spectra.mz.len();
         c_scan.extend(std::iter::repeat(scan as i32).take(n));
         c_level.extend(std::iter::repeat(spectra.ms_level as i32).take(n));
         c_rt.extend(std::iter::repeat(spectra.scan_start_time).take(n));
         c_mz.extend(spectra.mz.iter().copied());
         c_int.extend(spectra.intensity.iter().copied());
+        // let lo = spectra.precursors.get(0).and_then(|p| p.isolation_window_lower);
+        // let hi = spectra.precursors.get(0).and_then(|p| p.isolation_window_upper);
+        // c_lo.extend(std::iter::repeat(lo).take(n));
+        // c_hi.extend(std::iter::repeat(hi).take(n));
         total_rows += n;
     }
 
@@ -168,7 +143,7 @@ pub fn serialize_to_parquet<W: Write + Send>(w: W, spectra: &[RawSpectrum]) -> a
         Box::new(c_int),
     ];
 
-    const RG_SIZE: usize = 2usize.pow(19);
+    const RG_SIZE: usize = 2usize.pow(18);
     for n in (0..total_rows).step_by(RG_SIZE) {
         let length = (total_rows - n).min(RG_SIZE);
         let mut rg = writer.next_row_group()?;
@@ -179,4 +154,33 @@ pub fn serialize_to_parquet<W: Write + Send>(w: W, spectra: &[RawSpectrum]) -> a
         rg.close()?;
     }
     Ok(writer.into_inner()?)
+}
+
+pub fn deserialize_from_parquet<R: 'static + parquet::file::reader::ChunkReader>(
+    r: R,
+) -> parquet::errors::Result<()> {
+    // let mut spectra = Vec::new();
+    let reader = parquet::file::reader::SerializedFileReader::new(r)?;
+    let nrows = reader.metadata().file_metadata().num_rows();
+
+    let mut scans: Vec<i32> = vec![0; nrows as usize];
+
+    let mut offset = 0;
+    for row_group_idx in 0..reader.metadata().num_row_groups() {
+        let rg = reader.get_row_group(row_group_idx)?;
+        let col = rg.get_column_reader(0)?;
+        let mut col = get_typed_column_reader::<Int32Type>(col);
+        let nrows = rg.metadata().num_rows() as usize;
+        // let mut values = vec![0; nrows] ;
+        let (_, vals, _) = col.read_records(usize::MAX, None, None, &mut scans[offset..])?;
+        assert_eq!(vals, nrows);
+        offset += vals;
+    }
+
+    // for col in 0..rg.metadata().num_columns() {
+    //     // dbg!(rg.metadata().column(col).column_descr());
+    //     println!("{:#?}", rg.metadata().column(col));
+    // }
+
+    Ok(())
 }
