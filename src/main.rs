@@ -1,18 +1,13 @@
 use anyhow::anyhow;
 use clap::{Args, Command, FromArgMatches};
 use sage_cloudpath::CloudPath;
-use tokio::task::block_in_place;
 
 pub mod mzml;
 pub mod reader;
 pub mod write_long;
-pub mod write_wide;
 
 #[derive(Args, Debug)]
 struct ConverterArgs {
-    #[arg(short, long)]
-    long: bool,
-
     #[arg(short, long)]
     output_directory: Option<String>,
 
@@ -20,11 +15,7 @@ struct ConverterArgs {
     files: Vec<String>,
 }
 
-async fn convert_mzml(
-    path: &str,
-    output_directory: Option<&str>,
-    long: bool,
-) -> anyhow::Result<()> {
+async fn convert_mzml(path: &str, output_directory: Option<&str>) -> anyhow::Result<()> {
     let cloudpath = path.parse::<CloudPath>()?;
     let pqt_path = match output_directory {
         Some(dir) => {
@@ -59,10 +50,8 @@ async fn convert_mzml(
         .parse(cloudpath.read().await?)
         .await?;
 
-    let buffer = block_in_place(|| match long {
-        true => write_long::serialize_to_parquet(Vec::new(), &mzml_spectra),
-        false => write_wide::serialize_to_parquet(Vec::new(), &mzml_spectra),
-    })?;
+    let mut buffer = Vec::new();
+    write_long::serialize_to_parquet(&mut buffer, &mzml_spectra)?;
 
     pqt_path.write_bytes(buffer).await?;
 
@@ -92,7 +81,7 @@ async fn main() -> anyhow::Result<()> {
 
     for file in args.files {
         let output = args.output_directory.clone();
-        convert_mzml(&file, output.as_deref(), args.long).await?
+        convert_mzml(&file, output.as_deref()).await?
     }
 
     Ok(())
