@@ -10,10 +10,7 @@ The Apache Parquet file format has emerged as the default file format for data s
 
 However, the most critical part is that Parquet is widely supported in the data science ecosystem - supported out of the box by pandas, polars, and provided bindings for most programming languages. Parquet is also supported by a variety of databases and query engines (Athena, datafusion, Spark, BigQuery, etc), enabling direct SQL queries over petabyte-scale mass spectrometry data.
 
-The proposed file format stores the most important data for analyzing MS data in individual columns (scan identifiers, ms_level, precursor list, scan_start_time, m/z, intensity, ion mobility, etc), and has a final column for storing lists of key-value pairs (cvParams in the mzML spec).
-
-
-Prior work: https://github.com/compomics/ThermoRawFileParser - this would probably be the best way to integrate mzparquet! There is already an existing prototype parquet implementation, but it is different that the one proposed here.
+The format specified in this repository is a minimal set of columns needed to successfully process data - peak lists, isolation windows, and RT/ion mobility values. Each individual ion in an acquisition has it's own row in the mzparquet file (long format).
 
 ## Example of querying mzparquet files
 
