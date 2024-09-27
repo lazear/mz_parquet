@@ -36,7 +36,8 @@ pub fn build_schema() -> parquet::errors::Result<Type> {
     let rt = Type::primitive_type_builder("rt", PhysicalType::FLOAT)
         .with_repetition(Repetition::REQUIRED)
         .build()?;
-    let mz = Type::primitive_type_builder("rt", PhysicalType::FLOAT)
+
+    let mz = Type::primitive_type_builder("mz", PhysicalType::FLOAT)
         .with_repetition(Repetition::REQUIRED)
         .build()?;
 
