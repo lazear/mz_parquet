@@ -48,6 +48,10 @@ pub fn build_schema() -> parquet::errors::Result<Type> {
             is_signed: false,
         }))
         .build()?;
+    let collision_energy = Type::primitive_type_builder("collision_energy", PhysicalType::FLOAT)
+        .with_repetition(Repetition::OPTIONAL)
+        .build()?;
+
     let ion_mobility = Type::primitive_type_builder("ion_mobility", PhysicalType::FLOAT)
         .with_repetition(Repetition::OPTIONAL)
         .build()?;
@@ -87,6 +91,7 @@ pub fn build_schema() -> parquet::errors::Result<Type> {
             Arc::new(rt),
             Arc::new(mz),
             Arc::new(intensity),
+            Arc::new(collision_energy),
             Arc::new(ion_mobility),
             Arc::new(isolation_lower),
             Arc::new(isolation_upper),
@@ -180,6 +185,7 @@ where
     rt: ColumnWriter<FloatType>,
     mz: ColumnWriter<FloatType>,
     int: ColumnWriter<Int32Type>,
+    collision_energy: ColumnWriter<FloatType, true>,
     ion_mobility: ColumnWriter<FloatType, true>,
     lo: ColumnWriter<FloatType, true>,
     hi: ColumnWriter<FloatType, true>,
@@ -197,7 +203,7 @@ where
         descr: &SchemaDescriptor,
         options: Arc<WriterProperties>,
     ) -> Self {
-        assert_eq!(descr.num_columns(), 11);
+        assert_eq!(descr.num_columns(), 12);
 
         Self {
             current_rows: 0,
@@ -209,12 +215,13 @@ where
             rt: ColumnWriter::new(descr.column(2), options.clone()),
             mz: ColumnWriter::new(descr.column(3), options.clone()),
             int: ColumnWriter::new(descr.column(4), options.clone()),
-            ion_mobility: ColumnWriter::new(descr.column(5), options.clone()),
-            lo: ColumnWriter::new(descr.column(6), options.clone()),
-            hi: ColumnWriter::new(descr.column(7), options.clone()),
-            pscan: ColumnWriter::new(descr.column(8), options.clone()),
-            pmz: ColumnWriter::new(descr.column(9), options.clone()),
-            pz: ColumnWriter::new(descr.column(10), options.clone()),
+            collision_energy: ColumnWriter::new(descr.column(5), options.clone()),
+            ion_mobility: ColumnWriter::new(descr.column(6), options.clone()),
+            lo: ColumnWriter::new(descr.column(7), options.clone()),
+            hi: ColumnWriter::new(descr.column(8), options.clone()),
+            pscan: ColumnWriter::new(descr.column(9), options.clone()),
+            pmz: ColumnWriter::new(descr.column(10), options.clone()),
+            pz: ColumnWriter::new(descr.column(11), options.clone()),
         }
     }
 
@@ -234,6 +241,8 @@ where
         self.mz.extend(spectrum.mz.iter().copied());
         self.int
             .extend(spectrum.intensity.iter().map(|n| *n as u32 as i32));
+        self.collision_energy
+            .extend(std::iter::repeat(spectrum.collision_energy).take(n));
         self.ion_mobility
             .extend(std::iter::repeat(spectrum.inverse_ion_mobility).take(n));
 
@@ -292,6 +301,7 @@ where
         self.rt.write_and_flush(&mut rg)?;
         self.mz.write_and_flush(&mut rg)?;
         self.int.write_and_flush(&mut rg)?;
+        self.collision_energy.write_and_flush(&mut rg)?;
         self.ion_mobility.write_and_flush(&mut rg)?;
         self.lo.write_and_flush(&mut rg)?;
         self.hi.write_and_flush(&mut rg)?;
@@ -319,7 +329,7 @@ pub fn serialize_to_parquet<W: Write + Send>(w: W, spectra: &[RawSpectrum]) -> a
             .set_key_value_metadata(Some(vec![
                 KeyValue {
                     key: "version".into(),
-                    value: Some("0.2".into()),
+                    value: Some("0.2.1".into()),
                 },
                 KeyValue {
                     key: "writer".into(),

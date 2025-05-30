@@ -32,6 +32,8 @@ pub struct RawSpectrum {
     pub ion_injection_time: f32,
     /// Total ion current
     pub total_ion_current: f32,
+    /// Collision energy
+    pub collision_energy: Option<f32>,
     /// Ion mobility
     pub inverse_ion_mobility: Option<f32>,
     /// M/z array
@@ -51,6 +53,7 @@ enum State {
     Binary,
     Precursor,
     SelectedIon,
+    Activation,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -83,6 +86,7 @@ const MS_LEVEL: &[u8] = b"MS:1000511";
 const PROFILE: &[u8] = b"MS:1000128";
 const CENTROID: &[u8] = b"MS:1000127";
 const TOTAL_ION_CURRENT: &[u8] = b"MS:1000285";
+const COLLISION_ENERGY: &[u8] = b"MS:1000045";
 
 const SCAN_START_TIME: &[u8] = b"MS:1000016";
 const ION_INJECTION_TIME: &[u8] = b"MS:1000927";
@@ -186,6 +190,7 @@ impl MzMLReader {
                         (b"binary", Some(State::BinaryDataArray)) => Some(State::Binary),
                         (b"precursor", Some(State::Spectrum)) => Some(State::Precursor),
                         (b"selectedIon", Some(State::Precursor)) => Some(State::SelectedIon),
+                        (b"activation", Some(State::Precursor)) => Some(State::Activation),
                         _ => state,
                     };
                     match ev.name().into_inner() {
@@ -290,6 +295,15 @@ impl MzMLReader {
                             _ => {}
                         }
                     }
+                    (Some(State::Activation), b"cvParam") => {
+                        let accession = extract!(ev, b"accession");
+                        match accession.as_ref() {
+                            COLLISION_ENERGY => {
+                                spectrum.collision_energy = Some(extract_value!(ev));
+                            }
+                            _ => {}
+                        }
+                    }
 
                     _ => {}
                 },
@@ -361,6 +375,7 @@ impl MzMLReader {
                         (Some(State::Binary), b"binary") => Some(State::BinaryDataArray),
                         (Some(State::BinaryDataArray), b"binaryDataArray") => Some(State::Spectrum),
                         (Some(State::SelectedIon), b"selectedIon") => Some(State::Precursor),
+                        (Some(State::Activation), b"activation") => Some(State::Precursor),
                         (Some(State::Precursor), b"precursor") => {
                             if precursor.mz == 0.0 {
                                 precursor.mz =
