@@ -36,6 +36,8 @@ pub struct RawSpectrum {
     pub collision_energy: Option<f32>,
     /// Ion mobility
     pub inverse_ion_mobility: Option<f32>,
+    /// FAIMS compensation voltage
+    pub faims_cv: Option<f32>,
     /// M/z array
     pub mz: Vec<f32>,
     /// Intensity array
@@ -87,6 +89,7 @@ const PROFILE: &[u8] = b"MS:1000128";
 const CENTROID: &[u8] = b"MS:1000127";
 const TOTAL_ION_CURRENT: &[u8] = b"MS:1000285";
 const COLLISION_ENERGY: &[u8] = b"MS:1000045";
+const FAIMS_COMPENSATION_VOLTAGE: &[u8] = b"MS:1001581";
 
 const SCAN_START_TIME: &[u8] = b"MS:1000016";
 const ION_INJECTION_TIME: &[u8] = b"MS:1000927";
@@ -249,6 +252,9 @@ impl MzMLReader {
                                 } else {
                                     spectrum.total_ion_current = value;
                                 }
+                            }
+                            FAIMS_COMPENSATION_VOLTAGE => {
+                                spectrum.faims_cv = Some(extract_value!(ev));
                             }
                             _ => {}
                         }
@@ -539,6 +545,30 @@ mod test {
         assert!((s.scan_start_time - 1503.96166992188) < 0.0001);
         assert_eq!(s.ion_injection_time, 0.0);
         assert_eq!(s.intensity.len(), s.mz.len());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn parse_spectrum_with_faims_cv() -> Result<(), MzMLError> {
+        let s = r#"
+        <mzML>
+          <run>
+            <spectrumList count="1">
+              <spectrum id="controllerType=0 controllerNumber=1 scan=1" index="0" defaultArrayLength="0">
+                <cvParam cvRef="MS" accession="MS:1000511" value="1" name="ms level" />
+                <cvParam cvRef="MS" accession="MS:1000285" value="1" name="total ion current" />
+                <cvParam cvRef="MS" accession="MS:1001581" value="-50" name="FAIMS compensation voltage" />
+              </spectrum>
+            </spectrumList>
+          </run>
+        </mzML>
+        "#;
+
+        let mut spectra = MzMLReader::default().parse(s.as_bytes()).await?;
+
+        assert_eq!(spectra.len(), 1);
+        let spectrum = spectra.pop().unwrap();
+        assert_eq!(spectrum.faims_cv, Some(-50.0));
         Ok(())
     }
 }
