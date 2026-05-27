@@ -84,6 +84,10 @@ pub fn build_schema() -> parquet::errors::Result<Type> {
         }))
         .build()?;
 
+    let faims_cv = Type::primitive_type_builder("faims_cv", PhysicalType::FLOAT)
+        .with_repetition(Repetition::OPTIONAL)
+        .build()?;
+
     Type::group_type_builder("schema")
         .with_fields(vec![
             Arc::new(scan),
@@ -98,6 +102,7 @@ pub fn build_schema() -> parquet::errors::Result<Type> {
             Arc::new(precursor_scan),
             Arc::new(precursor_mz),
             Arc::new(precursor_z),
+            Arc::new(faims_cv),
         ])
         .build()
 }
@@ -192,6 +197,7 @@ where
     pscan: ColumnWriter<Int32Type, true>,
     pmz: ColumnWriter<FloatType, true>,
     pz: ColumnWriter<Int32Type, true>,
+    faims_cv: ColumnWriter<FloatType, true>,
 }
 
 impl<'a, W> ChunkWriter<'a, W>
@@ -203,7 +209,7 @@ where
         descr: &SchemaDescriptor,
         options: Arc<WriterProperties>,
     ) -> Self {
-        assert_eq!(descr.num_columns(), 12);
+        assert_eq!(descr.num_columns(), 13);
 
         Self {
             current_rows: 0,
@@ -222,6 +228,7 @@ where
             pscan: ColumnWriter::new(descr.column(9), options.clone()),
             pmz: ColumnWriter::new(descr.column(10), options.clone()),
             pz: ColumnWriter::new(descr.column(11), options.clone()),
+            faims_cv: ColumnWriter::new(descr.column(12), options.clone()),
         }
     }
 
@@ -245,6 +252,8 @@ where
             .extend(std::iter::repeat(spectrum.collision_energy).take(n));
         self.ion_mobility
             .extend(std::iter::repeat(spectrum.inverse_ion_mobility).take(n));
+        self.faims_cv
+            .extend(std::iter::repeat(spectrum.faims_cv).take(n));
 
         if let Some(precursor) = spectrum.precursors.get(0) {
             let precursor_scan = precursor
@@ -308,6 +317,7 @@ where
         self.pscan.write_and_flush(&mut rg)?;
         self.pmz.write_and_flush(&mut rg)?;
         self.pz.write_and_flush(&mut rg)?;
+        self.faims_cv.write_and_flush(&mut rg)?;
 
         rg.close()?;
 
@@ -348,4 +358,44 @@ pub fn serialize_to_parquet<W: Write + Send>(w: W, spectra: &[RawSpectrum]) -> a
     }
     chunk_writer.finish()?;
     Ok(writer.into_inner()?)
+}
+
+#[cfg(test)]
+mod test {
+    use super::serialize_to_parquet;
+    use crate::mzml::RawSpectrum;
+    use parquet::{
+        file::{reader::FileReader, serialized_reader::SerializedFileReader},
+        record::{Row, RowAccessor},
+    };
+
+    fn read_rows_from_parquet(parquet_bytes_vec: Vec<u8>) -> anyhow::Result<Vec<Row>> {
+        let reader = SerializedFileReader::new(bytes::Bytes::from(parquet_bytes_vec))?;
+        reader
+            .get_row_iter(None)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(Into::into)
+    }
+
+    #[test]
+    fn writes_faims_cv_column() -> anyhow::Result<()> {
+        let spectrum = RawSpectrum {
+            id: b"controllerType=0 controllerNumber=1 scan=1".to_vec(),
+            ms_level: 1,
+            centroid: true,
+            scan_start_time: 0.1,
+            total_ion_current: 10.0,
+            faims_cv: Some(-50.0),
+            mz: vec![419.52536, 1578.5468],
+            intensity: vec![100.0, 200.0],
+            ..Default::default()
+        };
+
+        let parquet_bytes_vec = serialize_to_parquet(Vec::new(), &[spectrum])?;
+        let row_vec = read_rows_from_parquet(parquet_bytes_vec)?;
+
+        assert_eq!(row_vec[0].get_float(12)?, -50.0);
+        assert_eq!(row_vec[1].get_float(12)?, -50.0);
+        Ok(())
+    }
 }

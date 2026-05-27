@@ -157,6 +157,7 @@ pub fn deserialize_from_parquet<R: 'static + ChunkReader>(
             scan_start_time: get_from_column_iter("scan_start_time", &mut iter)?,
             collision_energy: get_from_column_iter("collision_energy", &mut iter)?,
             inverse_ion_mobility: get_from_column_iter("inverse_ion_mobility", &mut iter)?,
+            faims_cv: None,
             ion_injection_time: get_from_column_iter("ion_injection_time", &mut iter)?,
             total_ion_current: get_from_column_iter("total_ion_current", &mut iter)?,
             precursors: get_from_column_iter::<Option<Vec<Precursor>>>("precursors", &mut iter)?
